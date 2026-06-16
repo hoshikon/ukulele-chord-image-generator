@@ -30,6 +30,15 @@
   .card .dl .svg{background:#fff;color:var(--ink)}
   .err{color:#b3402a;font-size:12px;padding:8px 2px;width:100%}
   .count{color:var(--soft);font-size:12px;margin:0 2px 12px}
+  .sep{border:none;border-top:1px solid var(--line);margin:16px 0}
+  input[type=text]{width:100%;font:13px ui-monospace,Menlo,Consolas,monospace;color:#222;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fdfdfb}
+  input[type=text]:focus{outline:2px solid var(--ink);outline-offset:1px}
+  .customlist{margin-top:14px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-flex;align-items:center;gap:5px;background:#f0eee6;border-radius:6px;padding:3px 4px 3px 9px;font-size:12px}
+  .chip button{border:none;background:transparent;color:var(--soft);padding:0 4px;font-size:14px;line-height:1;cursor:pointer;border-radius:4px}
+  .chip button:hover{color:#b3402a}
+  .addmsg{font-size:11.5px;margin:9px 0 0}
 </style>
 </head>
 <body>
@@ -41,15 +50,27 @@
     <textarea id="src" spellcheck="false" list="allchords"></textarea>
     <datalist id="allchords"></datalist>
     <p class="hint">
-      Built-in: just the name — <code>C</code>, <code>Em7</code>, <code>F#m</code>.<br>
-      Custom frets (G C E A): <code>Em6: 0 1 0 2</code>; <code>0</code>=open, <code>x</code>=muted.<br>
-      With fingers: <code>Em: 0 4 3 2 | 0 3 2 1</code>
+      One per line. Built-in: just the name — <code>C</code>, <code>Em7</code>, <code>F#m</code>.<br>
+      Or define inline (strings G C E A; <code>0</code>=open, <code>x</code>=muted):<br>
+      <code>{define: Em6 frets 0 1 0 2 fingers 0 1 0 2}</code>
     </p>
     <div class="btns">
       <button id="render">Render</button>
       <button class="ghost" id="all">Load all</button>
       <button class="ghost" id="sheet">Download all (PNG)</button>
     </div>
+    <hr class="sep">
+    <label for="defsrc">Add / override a chord</label>
+    <input id="defsrc" type="text" spellcheck="false" placeholder="{define: F#m7b5 frets 2 4 2 3 fingers 1 3 1 2}">
+    <div class="btns">
+      <button id="addchord">Save chord</button>
+      <button class="ghost" id="export">Export</button>
+      <button class="ghost" id="import">Import</button>
+      <input id="importfile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <p class="hint">Saved in this browser and overrides the built-in of the same name. Same <code>{define:}</code> syntax as UkeGeeks. Export/Import moves your custom chords to another browser.</p>
+    <p class="addmsg" id="addmsg"></p>
+    <div class="customlist" id="customlist"></div>
   </section>
   <section>
     <div class="count" id="count"></div>
@@ -104,23 +125,43 @@ function chordSVG(c){
 }
 
 /* ---------- input parsing ---------- */
+// UkeGeeks ChordPro syntax:  {define: NAME frets F F F F fingers F F F F add: string N fret N finger N}
+// frets are G C E A (left→right), x/X = muted; add-string numbers are 1-based from the G string.
+function parseDefine(raw){
+  let s=raw.trim().replace(/^\{/,'').replace(/\}$/,'').trim();
+  if(!/^define\b/i.test(s)) throw new Error('use {define: Name frets … fingers …}');
+  s=s.replace(/^define\s*:?\s*/i,'').replace(/add\s*:/gi,' add ').trim();
+  const toks=s.split(/\s+/).filter(Boolean);
+  const name=toks.shift();
+  if(!name) throw new Error('{define:} is missing a chord name');
+  const KW=new Set(['frets','fingers','add']);
+  let frets=null; const fingers=[],adds=[];
+  for(let i=0;i<toks.length;){
+    const k=toks[i++].toLowerCase();
+    if(k==='frets'){ frets=[]; while(i<toks.length&&!KW.has(toks[i].toLowerCase())) frets.push(toks[i++]); }
+    else if(k==='fingers'){ while(i<toks.length&&!KW.has(toks[i].toLowerCase())) fingers.push(toks[i++]); }
+    else if(k==='add'){ const a={}; while(i<toks.length&&!KW.has(toks[i].toLowerCase())){ const key=toks[i++].toLowerCase(),val=toks[i++];
+        if(key==='string')a.s=parseInt(val,10)-1; else if(key==='fret')a.fret=parseInt(val,10); else if(key==='finger')a.finger=parseInt(val,10); } adds.push(a); }
+    else throw new Error(`{define: ${name}} — unexpected "${k}"`);
+  }
+  if(!frets||frets.length!==4) throw new Error(`{define: ${name}} needs exactly 4 fret values`);
+  const f=frets.map(t=>/^x$/i.test(t)?-1:parseInt(t,10));
+  if(f.some(v=>isNaN(v)||v<-1)) throw new Error(`{define: ${name}} has a bad fret value`);
+  const g=[0,0,0,0];
+  fingers.forEach((t,idx)=>{ if(idx<4&&/^\d+$/.test(t)) g[idx]=+t; });
+  const entry={f,g};
+  const a=adds.filter(ad=>ad.s>=0&&ad.fret>0).map(ad=>[ad.s,ad.fret,ad.finger||0]);
+  if(a.length) entry.a=a;
+  return {name,entry};
+}
+
 function lineToChord(line){
   const raw=line.trim(); if(!raw)return null;
-  const c=raw.indexOf(':');
-  if(c<0){
-    let e=LIB[raw] || LIB[Object.keys(LIB).find(k=>k.toLowerCase()===raw.toLowerCase())] ;
-    if(!e && /b5/.test(raw)){ const alt=raw.replace(/b5/,'-5'); e=LIB[alt]; if(e) return entryToChord(alt,e); }
-    if(!e) throw new Error(`"${raw}" isn't in the library — type frets instead, e.g.  ${raw}: 0 0 0 0`);
-    return entryToChord(raw,e);
-  }
-  const name=raw.slice(0,c).trim(); let rest=raw.slice(c+1),fingers=null;
-  const bar=rest.indexOf('|');
-  if(bar>=0){ fingers=rest.slice(bar+1).trim().split(/\s+/).map(t=>/^\d+$/.test(t)?+t:0); rest=rest.slice(0,bar); }
-  const frets=rest.trim().split(/\s+/).map(t=>/^x$/i.test(t)?-1:parseInt(t,10));
-  if(frets.length!==4||frets.some(f=>isNaN(f)||f<-1)) throw new Error(`"${name}" — need 4 fret values (0–n or x)`);
-  const dots=[],muted=[false,false,false,false];
-  frets.forEach((fr,i)=>{ if(fr===-1)muted[i]=true; else if(fr>0)dots.push({s:i,fret:fr,finger:fingers&&fingers[i]?fingers[i]:0}); });
-  return {name,dots,muted};
+  if(/^\{?\s*define\b/i.test(raw)){ const {name,entry}=parseDefine(raw); return entryToChord(name,entry); }
+  let e=LIB[raw] || LIB[Object.keys(LIB).find(k=>k.toLowerCase()===raw.toLowerCase())] ;
+  if(!e && /b5/.test(raw)){ const alt=raw.replace(/b5/,'-5'); e=LIB[alt]; if(e) return entryToChord(alt,e); }
+  if(!e) throw new Error(`"${raw}" isn't in the library — define it, e.g.  {define: ${raw} frets 0 0 0 0}`);
+  return entryToChord(raw,e);
 }
 
 /* ---------- UI ---------- */
@@ -128,7 +169,7 @@ const $=s=>document.querySelector(s);
 const src=$('#src');
 src.value=`C6\nCmaj7\nEm\nEm6\nEm7\nB9`;
 // autocomplete list (rebuilt whenever custom chords change)
-function refreshList(){ $('#allchords').innerHTML=Object.keys(LIB).map(n=>`<option value="${n}">`).join(''); }
+function refreshList(){ $('#allchords').innerHTML=Object.keys(LIB).map(n=>`<option value="${esc(n)}">`).join(''); }
 refreshList();
 
 let made=[];
@@ -166,6 +207,68 @@ $('#render').onclick=build;
 $('#sheet').onclick=dlSheet;
 $('#all').onclick=()=>{ src.value=Object.keys(LIB).join('\n'); build(); };
 src.addEventListener('input',()=>{clearTimeout(window.__t);window.__t=setTimeout(build,250);});
+
+/* ---------- custom-chord form ---------- */
+const defsrc=$('#defsrc'), addmsg=$('#addmsg');
+function renderCustomList(){
+  const names=Object.keys(customChords), wrap=$('#customlist');
+  if(!names.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML='<label>Your custom chords</label><div class="chips">'+
+    names.map(n=>`<span class="chip"><b>${esc(n)}</b><button data-n="${esc(n)}" title="Delete ${esc(n)}">×</button></span>`).join('')+'</div>';
+  wrap.querySelectorAll('button[data-n]').forEach(b=>b.onclick=()=>delCustom(b.dataset.n));
+}
+function delCustom(name){ delete customChords[name]; saveCustom(); rebuildLib(); refreshList(); renderCustomList(); build(); }
+function addCustom(){
+  let parsed;
+  try{ parsed=parseDefine(defsrc.value); }
+  catch(e){ addmsg.style.color='#b3402a'; addmsg.textContent='⚠ '+e.message; return; }
+  const {name,entry}=parsed, overriding=(name in LIB);
+  customChords[name]=entry; saveCustom(); rebuildLib(); refreshList(); renderCustomList();
+  if(!src.value.split('\n').map(s=>s.trim()).includes(name)) src.value=(src.value.replace(/\s*$/,'')+'\n'+name).replace(/^\n/,'');
+  build();
+  addmsg.style.color='var(--soft)'; addmsg.textContent=(overriding?'Overrode ':'Added ')+name+'.';
+  defsrc.value='';
+}
+$('#addchord').onclick=addCustom;
+defsrc.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addCustom(); } });
+
+/* ---------- export / import custom chords ---------- */
+// Coerce an imported value into a safe {f,g,a?} entry, or null if it isn't one.
+function validEntry(e){
+  if(!e||!Array.isArray(e.f)||e.f.length!==4) return null;
+  const f=e.f.map(v=>Number.isInteger(v)&&v>=-1?v:NaN);
+  if(f.some(Number.isNaN)) return null;
+  const g=(Array.isArray(e.g)?e.g:[]).slice(0,4).map(v=>Number.isInteger(v)&&v>0?v:0);
+  while(g.length<4) g.push(0);
+  const out={f,g};
+  if(Array.isArray(e.a)){ const a=e.a.filter(t=>Array.isArray(t)&&t.length>=2).map(t=>[t[0]|0,t[1]|0,t[2]|0]); if(a.length) out.a=a; }
+  return out;
+}
+function exportCustom(){
+  const names=Object.keys(customChords);
+  if(!names.length){ addmsg.style.color='var(--soft)'; addmsg.textContent='No custom chords to export yet.'; return; }
+  const blob=new Blob([JSON.stringify(customChords,null,2)],{type:'application/json'});
+  dl(URL.createObjectURL(blob),'ukulele-custom-chords.json');
+}
+function importCustom(file){
+  const r=new FileReader();
+  r.onload=()=>{
+    let data; try{ data=JSON.parse(r.result); }catch(e){ addmsg.style.color='#b3402a'; addmsg.textContent='⚠ Not valid JSON.'; return; }
+    if(!data||typeof data!=='object'||Array.isArray(data)){ addmsg.style.color='#b3402a'; addmsg.textContent='⚠ Unexpected file format.'; return; }
+    let n=0;
+    for(const [name,entry] of Object.entries(data)){ const v=validEntry(entry); if(v){ customChords[name]=v; n++; } }
+    if(!n){ addmsg.style.color='#b3402a'; addmsg.textContent='⚠ No valid chords found in file.'; return; }
+    saveCustom(); rebuildLib(); refreshList(); renderCustomList(); build();
+    addmsg.style.color='var(--soft)'; addmsg.textContent=`Imported ${n} chord${n>1?'s':''}.`;
+  };
+  r.readAsText(file);
+}
+$('#export').onclick=exportCustom;
+$('#import').onclick=()=>$('#importfile').click();
+$('#importfile').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) importCustom(f); e.target.value=''; });
+
+renderCustomList();
+
 build();
 </script>
 </body>
