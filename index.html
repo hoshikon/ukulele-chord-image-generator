@@ -90,6 +90,10 @@
       <select id="theme"></select>
       <label for="perrow">Chords per row</label>
       <input id="perrow" type="number" min="1" max="20" value="10">
+      <label for="imgw">Width</label>
+      <input id="imgw" type="number" min="80" max="200" value="110">
+      <label for="imgh">Height</label>
+      <input id="imgh" type="number" min="135" max="240" value="150">
     </div>
     <div class="combined" id="combined"></div>
     <div class="grid" id="stage"></div>
@@ -108,7 +112,17 @@ rebuildLib();
 
 /* ---------- renderer: measured to match the original images ---------- */
 const STYLE={dot:'#1c0c5f',grid:'#1c0c5f',name:'#a8412c',dotText:'#ffffff',fretText:'#8a8a96',muteX:'#8a8a96',bg:'#ffffff'};
-const GEO={W:110,H:150,sx0:25,fy0:30,fs:20.5,ss:20,r:7,lw:1.6,frets:5,nameSize:18,fingerSize:12,nameY:22};
+const GEO={W:110,H:150,fy0:30,fs:20.5,ss:20,r:7,lw:1.6,frets:5,nameSize:18,fingerSize:12,nameY:22};
+
+/* ---------- per-diagram canvas size (configurable; grid stays centered) ---------- */
+const DIMS={Wmin:80,Wmax:200,Hmin:135,Hmax:240};
+const DIM_LS='uke.dims';
+function applyDims(w,h){
+  GEO.W=Math.min(DIMS.Wmax,Math.max(DIMS.Wmin,Math.round(w)||GEO.W));
+  GEO.H=Math.min(DIMS.Hmax,Math.max(DIMS.Hmin,Math.round(h)||GEO.H));
+  try{ localStorage.setItem(DIM_LS,JSON.stringify({w:GEO.W,h:GEO.H})); }catch(e){}
+}
+try{ const d=JSON.parse(localStorage.getItem(DIM_LS)); if(d) applyDims(d.w,d.h); }catch(e){}
 
 /* ---------- color themes (lifted from UkeGeeks ugsEditorPlus.themes.js "song" palettes) ---------- */
 const THEMES={
@@ -144,7 +158,8 @@ function esc(t){return String(t).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>
 
 function chordSVG(c){
   const g=GEO;
-  const sx=i=>g.sx0+i*g.ss, fy=j=>g.fy0+j*g.fs;
+  const sx0=(g.W-g.ss*3)/2; // centre the 4-string grid in the canvas; W=110 → 25 (original)
+  const sx=i=>sx0+i*g.ss, fy=j=>g.fy0+j*g.fs;
   const left=sx(0),right=sx(3),top=fy(0),bot=fy(g.frets);
   const fr=c.dots.map(d=>d.fret);
   const mx=fr.length?Math.max(...fr):0, first=mx<=5?1:mx-4;
@@ -282,6 +297,13 @@ const themeSel=$('#theme');
 themeSel.innerHTML=Object.entries(THEMES).map(([k,t])=>`<option value="${k}">${t.label}</option>`).join('');
 themeSel.value=currentTheme;
 themeSel.addEventListener('change',()=>{ applyTheme(themeSel.value); build(); });
+
+/* ---------- diagram size ---------- */
+const imgw=$('#imgw'), imgh=$('#imgh');
+imgw.value=GEO.W; imgh.value=GEO.H;
+function onDims(){ applyDims(+imgw.value,+imgh.value); imgw.value=GEO.W; imgh.value=GEO.H; build(); }
+imgw.addEventListener('change',onDims);
+imgh.addEventListener('change',onDims);
 
 /* ---------- custom-chord form ---------- */
 const defsrc=$('#defsrc'), addmsg=$('#addmsg');
