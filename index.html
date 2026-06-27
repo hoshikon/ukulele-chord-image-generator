@@ -43,6 +43,8 @@
   .sheetbar label{margin:0;white-space:nowrap}
   .sheetbar input{width:64px;font:13px ui-monospace,Menlo,Consolas,monospace;color:#222;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:#fdfdfb}
   .sheetbar input:focus{outline:2px solid var(--ink);outline-offset:1px}
+  .sheetbar select{font:13px ui-monospace,Menlo,Consolas,monospace;color:#222;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:#fdfdfb;cursor:pointer}
+  .sheetbar select:focus{outline:2px solid var(--ink);outline-offset:1px}
   .combined{margin:0 0 18px}
   .combined svg{max-width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:10px}
   .combined .dl{display:flex;gap:6px;margin-top:8px}
@@ -84,6 +86,8 @@
   <section>
     <div class="count" id="count"></div>
     <div class="sheetbar">
+      <label for="theme">Theme</label>
+      <select id="theme"></select>
       <label for="perrow">Chords per row</label>
       <input id="perrow" type="number" min="1" max="20" value="10">
     </div>
@@ -103,8 +107,31 @@ function saveCustom(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(customCho
 rebuildLib();
 
 /* ---------- renderer: measured to match the original images ---------- */
-const STYLE={dot:'#1c0c5f',grid:'#1c0c5f',name:'#a8412c',dotText:'#ffffff',fretText:'#8a8a96',muteX:'#8a8a96'};
+const STYLE={dot:'#1c0c5f',grid:'#1c0c5f',name:'#a8412c',dotText:'#ffffff',fretText:'#8a8a96',muteX:'#8a8a96',bg:'#ffffff'};
 const GEO={W:110,H:150,sx0:25,fy0:30,fs:20.5,ss:20,r:7,lw:1.6,frets:5,nameSize:18,fingerSize:12,nameY:22};
+
+/* ---------- color themes (lifted from UkeGeeks ugsEditorPlus.themes.js "song" palettes) ---------- */
+const THEMES={
+  notebook :{label:'Rock Notebook',        grid:'#747CAD',dot:'#1C0866',dotText:'#ffffff',name:'#B22000',fretText:'#A4A0B2',bg:'#ffffff'},
+  normal   :{label:'Normal (white paper)', grid:'#003366',dot:'#ff0000',dotText:'#ffffff',name:'#000000',fretText:'#4a4a4a',bg:'#ffffff'},
+  reversed :{label:'Reversed (projector)', grid:'#365F70',dot:'#FDD96F',dotText:'#000000',name:'#FF6040',fretText:'#999999',bg:'#13232e'},
+  frosty   :{label:'Frostcicle',           grid:'#66B4CC',dot:'#332335',dotText:'#9FE1F9',name:'#0896FE',fretText:'#E3D8BA',bg:'#ffffff'},
+  jellyBean:{label:'Jelly Beans',          grid:'#49BC45',dot:'#FF9417',dotText:'#FCF49F',name:'#D20070',fretText:'#4a4a4a',bg:'#ffffff'},
+  justBlack:{label:'Just Black (laser)',   grid:'#cccccc',dot:'#000000',dotText:'#ffffff',name:'#000000',fretText:'#000000',bg:'#ffffff'},
+  krampus  :{label:'Gruss vom Krampus',    grid:'#929867',dot:'#A22C27',dotText:'#EBD592',name:'#4F2621',fretText:'#4a4a4a',bg:'#ffffff'},
+  western  :{label:'Out West',             grid:'#B5A679',dot:'#CF8300',dotText:'#ffffff',name:'#386571',fretText:'#4a4a4a',bg:'#ffffff'},
+  pumpkin  :{label:'Pumpkin Pie',          grid:'#8E9A6C',dot:'#DA6328',dotText:'#FFEE4A',name:'#68391D',fretText:'#B14623',bg:'#ffffff'},
+  zombie   :{label:'Zombies!!!',           grid:'#9EB036',dot:'#E52501',dotText:'#FEDA79',name:'#798666',fretText:'#B14623',bg:'#ffffff'},
+};
+const THEME_LS='uke.theme';
+function applyTheme(key){
+  const t=THEMES[key]||THEMES.notebook;
+  Object.assign(STYLE,{grid:t.grid,dot:t.dot,dotText:t.dotText,name:t.name,fretText:t.fretText,muteX:t.fretText,bg:t.bg});
+  try{ localStorage.setItem(THEME_LS,key); }catch(e){}
+}
+let currentTheme='notebook';
+try{ const saved=localStorage.getItem(THEME_LS); if(saved&&THEMES[saved]) currentTheme=saved; }catch(e){}
+applyTheme(currentTheme);
 
 function entryToChord(name,e){
   const dots=[],muted=[false,false,false,false];
@@ -122,7 +149,7 @@ function chordSVG(c){
   const fr=c.dots.map(d=>d.fret);
   const mx=fr.length?Math.max(...fr):0, first=mx<=5?1:mx-4;
   const cy=fret=>g.fy0+g.fs*(fret-first+0.5);
-  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.W} ${g.H}" width="${g.W}" height="${g.H}"><rect width="${g.W}" height="${g.H}" fill="#fff"/>`;
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.W} ${g.H}" width="${g.W}" height="${g.H}"><rect width="${g.W}" height="${g.H}" fill="${STYLE.bg}"/>`;
   for(let i=0;i<4;i++) s+=`<line x1="${sx(i)}" y1="${top}" x2="${sx(i)}" y2="${bot}" stroke="${STYLE.grid}" stroke-width="${g.lw}"/>`;
   for(let j=0;j<=g.frets;j++) s+=`<line x1="${left}" y1="${fy(j)}" x2="${right}" y2="${fy(j)}" stroke="${STYLE.grid}" stroke-width="${g.lw}"/>`;
   if(first!==1) s+=`<text x="${left-6}" y="${cy(first)+3}" text-anchor="end" font-family="Arial,sans-serif" font-size="13" fill="${STYLE.fretText}">${first}</text>`;
@@ -206,12 +233,12 @@ function build(){
 }
 function svgToPNG(svg,scale,cb){ const img=new Image();
   img.onload=()=>{ const cv=document.createElement('canvas'); cv.width=110*scale; cv.height=150*scale;
-    const x=cv.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,cv.width,cv.height); x.drawImage(img,0,0,cv.width,cv.height); cb(cv); };
+    const x=cv.getContext('2d'); x.fillStyle=STYLE.bg; x.fillRect(0,0,cv.width,cv.height); x.drawImage(img,0,0,cv.width,cv.height); cb(cv); };
   img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg))); }
 function dlSVG(svg,name){ dl(URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'})),safe(name)+'.svg'); }
 function dlSheet(){ if(!made.length)return; const cols=Math.min(made.length,6),rows=Math.ceil(made.length/cols),sc=4,gap=10;
   const cv=document.createElement('canvas'); cv.width=(110*cols+gap*(cols+1))*sc; cv.height=(150*rows+gap*(rows+1))*sc;
-  const x=cv.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,cv.width,cv.height); let done=0;
+  const x=cv.getContext('2d'); x.fillStyle=STYLE.bg; x.fillRect(0,0,cv.width,cv.height); let done=0;
   made.forEach((m,i)=>{ const img=new Image(); img.onload=()=>{ const col=i%cols,row=Math.floor(i/cols);
     x.drawImage(img,(gap+col*(110+gap))*sc,(gap+row*(150+gap))*sc,110*sc,150*sc); if(++done===made.length)dl(cv.toDataURL('image/png'),'ukulele-chords.png'); };
     img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(m.svg))); }); }
@@ -221,7 +248,7 @@ function sheetSVG(svgs,perRow){
   const cols=Math.min(Math.max(1,perRow), svgs.length)||1;
   const rows=Math.ceil(svgs.length/cols);
   const W=cols*cw+gap*(cols+1), H=rows*ch+gap*(rows+1);
-  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#fff"/>`;
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="${STYLE.bg}"/>`;
   svgs.forEach((cs,i)=>{ const col=i%cols,row=Math.floor(i/cols);
     const x=gap+col*(cw+gap), y=gap+row*(ch+gap);
     s+=cs.replace(/^<svg /,`<svg x="${x}" y="${y}" `);
@@ -230,7 +257,7 @@ function sheetSVG(svgs,perRow){
 }
 function sheetToPNG(svg,w,h,scale,cb){ const img=new Image();
   img.onload=()=>{ const cv=document.createElement('canvas'); cv.width=w*scale; cv.height=h*scale;
-    const x=cv.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,cv.width,cv.height); x.drawImage(img,0,0,cv.width,cv.height); cb(cv); };
+    const x=cv.getContext('2d'); x.fillStyle=STYLE.bg; x.fillRect(0,0,cv.width,cv.height); x.drawImage(img,0,0,cv.width,cv.height); cb(cv); };
   img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg))); }
 function buildCombined(){
   const wrap=$('#combined'); wrap.innerHTML='';
@@ -249,6 +276,12 @@ $('#sheet').onclick=dlSheet;
 $('#all').onclick=()=>{ src.value=Object.keys(LIB).join('\n'); build(); };
 src.addEventListener('input',()=>{clearTimeout(window.__t);window.__t=setTimeout(build,250);});
 $('#perrow').addEventListener('input',buildCombined);
+
+/* ---------- theme picker ---------- */
+const themeSel=$('#theme');
+themeSel.innerHTML=Object.entries(THEMES).map(([k,t])=>`<option value="${k}">${t.label}</option>`).join('');
+themeSel.value=currentTheme;
+themeSel.addEventListener('change',()=>{ applyTheme(themeSel.value); build(); });
 
 /* ---------- custom-chord form ---------- */
 const defsrc=$('#defsrc'), addmsg=$('#addmsg');
