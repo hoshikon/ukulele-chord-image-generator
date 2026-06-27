@@ -39,6 +39,15 @@
   .chip button{border:none;background:transparent;color:var(--soft);padding:0 4px;font-size:14px;line-height:1;cursor:pointer;border-radius:4px}
   .chip button:hover{color:#b3402a}
   .addmsg{font-size:11.5px;margin:9px 0 0}
+  .sheetbar{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+  .sheetbar label{margin:0;white-space:nowrap}
+  .sheetbar input{width:64px;font:13px ui-monospace,Menlo,Consolas,monospace;color:#222;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:#fdfdfb}
+  .sheetbar input:focus{outline:2px solid var(--ink);outline-offset:1px}
+  .combined{margin:0 0 18px}
+  .combined svg{max-width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:10px}
+  .combined .dl{display:flex;gap:6px;margin-top:8px}
+  .combined .dl button{padding:5px 10px;font-size:10px}
+  .combined .dl .svg{background:#fff;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -74,6 +83,11 @@
   </section>
   <section>
     <div class="count" id="count"></div>
+    <div class="sheetbar">
+      <label for="perrow">Chords per row</label>
+      <input id="perrow" type="number" min="1" max="20" value="10">
+    </div>
+    <div class="combined" id="combined"></div>
     <div class="grid" id="stage"></div>
   </section>
 </div>
@@ -188,6 +202,7 @@ function build(){
     stage.appendChild(card);
   }
   $('#count').textContent=made.length?made.length+' chord'+(made.length>1?'s':''):'';
+  buildCombined();
 }
 function svgToPNG(svg,scale,cb){ const img=new Image();
   img.onload=()=>{ const cv=document.createElement('canvas'); cv.width=110*scale; cv.height=150*scale;
@@ -200,6 +215,32 @@ function dlSheet(){ if(!made.length)return; const cols=Math.min(made.length,6),r
   made.forEach((m,i)=>{ const img=new Image(); img.onload=()=>{ const col=i%cols,row=Math.floor(i/cols);
     x.drawImage(img,(gap+col*(110+gap))*sc,(gap+row*(150+gap))*sc,110*sc,150*sc); if(++done===made.length)dl(cv.toDataURL('image/png'),'ukulele-chords.png'); };
     img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(m.svg))); }); }
+/* ---------- combined image: all chords, perRow per row, wraps; reuses chordSVG ---------- */
+function sheetSVG(svgs,perRow){
+  const g=GEO, cw=g.W, ch=g.H, gap=8;
+  const cols=Math.min(Math.max(1,perRow), svgs.length)||1;
+  const rows=Math.ceil(svgs.length/cols);
+  const W=cols*cw+gap*(cols+1), H=rows*ch+gap*(rows+1);
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#fff"/>`;
+  svgs.forEach((cs,i)=>{ const col=i%cols,row=Math.floor(i/cols);
+    const x=gap+col*(cw+gap), y=gap+row*(ch+gap);
+    s+=cs.replace(/^<svg /,`<svg x="${x}" y="${y}" `);
+  });
+  return {svg:s+'</svg>',w:W,h:H};
+}
+function sheetToPNG(svg,w,h,scale,cb){ const img=new Image();
+  img.onload=()=>{ const cv=document.createElement('canvas'); cv.width=w*scale; cv.height=h*scale;
+    const x=cv.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,cv.width,cv.height); x.drawImage(img,0,0,cv.width,cv.height); cb(cv); };
+  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg))); }
+function buildCombined(){
+  const wrap=$('#combined'); wrap.innerHTML='';
+  if(!made.length) return;
+  let perRow=parseInt($('#perrow').value,10); if(!perRow||perRow<1) perRow=10;
+  const {svg,w,h}=sheetSVG(made.map(m=>m.svg), perRow);
+  wrap.innerHTML=svg+`<div class="dl"><button class="svg">SVG</button><button class="png">PNG</button></div>`;
+  wrap.querySelector('.svg').onclick=()=>dlSVG(svg,'ukulele-chords');
+  wrap.querySelector('.png').onclick=()=>sheetToPNG(svg,w,h,4,cv=>dl(cv.toDataURL('image/png'),'ukulele-chords.png'));
+}
 function safe(s){return s.replace(/[^\w#+-]+/g,'_');}
 function dl(url,fn){ const a=document.createElement('a'); a.href=url; a.download=fn; a.click(); if(url.startsWith('blob:'))setTimeout(()=>URL.revokeObjectURL(url),1000); }
 
@@ -207,6 +248,7 @@ $('#render').onclick=build;
 $('#sheet').onclick=dlSheet;
 $('#all').onclick=()=>{ src.value=Object.keys(LIB).join('\n'); build(); };
 src.addEventListener('input',()=>{clearTimeout(window.__t);window.__t=setTimeout(build,250);});
+$('#perrow').addEventListener('input',buildCombined);
 
 /* ---------- custom-chord form ---------- */
 const defsrc=$('#defsrc'), addmsg=$('#addmsg');
