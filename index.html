@@ -103,8 +103,8 @@ function saveCustom(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(customCho
 rebuildLib();
 
 /* ---------- renderer: measured to match the original images ---------- */
-const STYLE={dot:'#1c0c5f',grid:'#b6b9cd',name:'#a8412c',dotText:'#ffffff',fretText:'#8a8a96',muteX:'#8a8a96'};
-const GEO={W:110,H:150,sx0:25,fy0:30,fs:20.5,ss:20,r:6.3,lw:1,frets:5,nameSize:15,fingerSize:10,nameY:22};
+const STYLE={dot:'#1c0c5f',grid:'#1c0c5f',name:'#a8412c',dotText:'#ffffff',fretText:'#8a8a96',muteX:'#8a8a96'};
+const GEO={W:110,H:150,sx0:25,fy0:30,fs:20.5,ss:20,r:7,lw:1.6,frets:5,nameSize:18,fingerSize:12,nameY:22};
 
 function entryToChord(name,e){
   const dots=[],muted=[false,false,false,false];
@@ -125,14 +125,14 @@ function chordSVG(c){
   let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.W} ${g.H}" width="${g.W}" height="${g.H}"><rect width="${g.W}" height="${g.H}" fill="#fff"/>`;
   for(let i=0;i<4;i++) s+=`<line x1="${sx(i)}" y1="${top}" x2="${sx(i)}" y2="${bot}" stroke="${STYLE.grid}" stroke-width="${g.lw}"/>`;
   for(let j=0;j<=g.frets;j++) s+=`<line x1="${left}" y1="${fy(j)}" x2="${right}" y2="${fy(j)}" stroke="${STYLE.grid}" stroke-width="${g.lw}"/>`;
-  if(first!==1) s+=`<text x="${left-6}" y="${cy(first)+3}" text-anchor="end" font-family="Arial,sans-serif" font-size="11" fill="${STYLE.fretText}">${first}</text>`;
+  if(first!==1) s+=`<text x="${left-6}" y="${cy(first)+3}" text-anchor="end" font-family="Arial,sans-serif" font-size="13" fill="${STYLE.fretText}">${first}</text>`;
   c.dots.forEach(d=>{ const row=d.fret-first; if(row<0||row>=g.frets)return;
     const x=sx(d.s),y=cy(d.fret);
     s+=`<circle cx="${x}" cy="${y}" r="${g.r}" fill="${STYLE.dot}"/>`;
     if(d.finger>0) s+=`<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central" font-family="Arial,sans-serif" font-weight="bold" font-size="${g.fingerSize}" fill="${STYLE.dotText}">${d.finger}</text>`;
   });
-  c.muted.forEach((m,i)=>{ if(!m)return; const x=sx(i),y=top-4,h=3.8;
-    s+=`<line x1="${x-h}" y1="${y-h}" x2="${x+h}" y2="${y+h}" stroke="${STYLE.muteX}" stroke-width="1.6"/><line x1="${x-h}" y1="${y+h}" x2="${x+h}" y2="${y-h}" stroke="${STYLE.muteX}" stroke-width="1.6"/>`;
+  c.muted.forEach((m,i)=>{ if(!m)return; const x=sx(i),y=top-4,h=4.2;
+    s+=`<line x1="${x-h}" y1="${y-h}" x2="${x+h}" y2="${y+h}" stroke="${STYLE.muteX}" stroke-width="2.2"/><line x1="${x-h}" y1="${y+h}" x2="${x+h}" y2="${y-h}" stroke="${STYLE.muteX}" stroke-width="2.2"/>`;
   });
   s+=`<text x="${(left+right)/2}" y="${g.nameY}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="${g.nameSize}" fill="${STYLE.name}">${esc(c.name)}</text>`;
   return s+`</svg>`;
