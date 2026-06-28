@@ -14,7 +14,8 @@
   .rail{display:flex;flex-direction:column;gap:16px}
   .outbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px}
   .outbar .count{margin:0}
-  @media(max-width:780px){.row{grid-template-columns:1fr}}
+  @media(max-width:780px){.row{grid-template-columns:1fr}
+    textarea,input[type=text],.field select,.field input{font-size:16px}}
   .panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
   label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);margin-bottom:7px}
   textarea{width:100%;height:200px;resize:vertical;font:13px/1.7 ui-monospace,Menlo,Consolas,monospace;color:#222;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fdfdfb}
@@ -25,6 +26,7 @@
   button{font:12px ui-monospace,monospace;border:1px solid var(--ink);background:var(--ink);color:#fff;padding:8px 13px;border-radius:7px;cursor:pointer}
   button.ghost{background:#fff;color:var(--ink)}
   button:hover{opacity:.9}
+  button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .grid{display:flex;flex-wrap:wrap;gap:14px}
   .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 11px 9px;display:flex;flex-direction:column;align-items:center;gap:8px}
   .card svg{width:112px;height:auto;display:block}
@@ -118,7 +120,6 @@
   <section class="canvas">
     <div class="outbar">
       <span class="count" id="count"></span>
-      <button class="ghost" id="sheet">Download all (PNG)</button>
     </div>
     <div class="combined" id="combined"></div>
     <div class="grid" id="stage"></div>
@@ -276,12 +277,6 @@ function svgToPNG(svg,scale,cb){ const img=new Image();
     const x=cv.getContext('2d'); x.fillStyle=STYLE.bg; x.fillRect(0,0,cv.width,cv.height); x.drawImage(img,0,0,cv.width,cv.height); cb(cv); };
   img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg))); }
 function dlSVG(svg,name){ dl(URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'})),safe(name)+'.svg'); }
-function dlSheet(){ if(!made.length)return; const cols=Math.min(made.length,6),rows=Math.ceil(made.length/cols),sc=4,gap=10;
-  const cv=document.createElement('canvas'); cv.width=(110*cols+gap*(cols+1))*sc; cv.height=(150*rows+gap*(rows+1))*sc;
-  const x=cv.getContext('2d'); x.fillStyle=STYLE.bg; x.fillRect(0,0,cv.width,cv.height); let done=0;
-  made.forEach((m,i)=>{ const img=new Image(); img.onload=()=>{ const col=i%cols,row=Math.floor(i/cols);
-    x.drawImage(img,(gap+col*(110+gap))*sc,(gap+row*(150+gap))*sc,110*sc,150*sc); if(++done===made.length)dl(cv.toDataURL('image/png'),'ukulele-chords.png'); };
-    img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(m.svg))); }); }
 /* ---------- combined image: all chords, perRow per row, wraps; reuses chordSVG ---------- */
 function sheetSVG(svgs,perRow){
   const g=GEO, cw=g.W, ch=g.H, gap=8;
@@ -312,7 +307,6 @@ function safe(s){return s.replace(/[^\w#+-]+/g,'_');}
 function dl(url,fn){ const a=document.createElement('a'); a.href=url; a.download=fn; a.click(); if(url.startsWith('blob:'))setTimeout(()=>URL.revokeObjectURL(url),1000); }
 
 $('#render').onclick=build;
-$('#sheet').onclick=dlSheet;
 $('#all').onclick=()=>{ src.value=Object.keys(LIB).join('\n'); build(); };
 src.addEventListener('input',()=>{clearTimeout(window.__t);window.__t=setTimeout(build,250);});
 $('#perrow').addEventListener('input',buildCombined);
