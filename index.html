@@ -20,6 +20,12 @@
   label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);margin-bottom:7px}
   textarea{width:100%;height:200px;resize:vertical;font:13px/1.7 ui-monospace,Menlo,Consolas,monospace;color:#222;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fdfdfb}
   textarea:focus{outline:2px solid var(--ink);outline-offset:1px}
+  .srcwrap{position:relative}
+  .suggest{position:absolute;z-index:30;min-width:160px;max-height:200px;overflow:auto;background:#fff;
+    border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px -12px rgba(0,0,0,.35);padding:4px}
+  .suggest[hidden]{display:none}
+  .sug{padding:6px 9px;border-radius:6px;font:13px ui-monospace,Menlo,Consolas,monospace;color:#222;cursor:pointer;white-space:nowrap}
+  .sug.active,.sug:hover{background:#f0eee6}
   .hint{font-size:11.5px;color:var(--soft);line-height:1.6;margin:9px 0 0}
   .hint code{background:#f0eee6;padding:1px 5px;border-radius:4px}
   .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
@@ -47,8 +53,10 @@
   .panel-title{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);font-weight:600;margin:0 0 12px}
   .fields{display:flex;flex-wrap:wrap;align-items:end;gap:12px 14px}
   .field{display:flex;flex-direction:column;min-width:0}
-  .field.theme{flex:1 1 100%}
-  .field.num{flex:1 1 70px}
+  .field.theme{flex:1 1 220px}
+  .field.num{flex:0 0 84px}
+  .controls{margin:0 0 16px;max-width:560px}
+  .dims{display:flex;gap:14px;align-items:end}
   .field label{margin:0 0 6px}
   .field select,.field input{width:100%;font:13px ui-monospace,Menlo,Consolas,monospace;color:#222;border:1px solid var(--line);border-radius:7px;padding:7px 9px;background:#fdfdfb}
   .field select{cursor:pointer}
@@ -67,10 +75,12 @@
   <section class="rail">
     <div class="panel">
       <label class="panel-title" for="src">Chords</label>
-      <textarea id="src" spellcheck="false" list="allchords"></textarea>
-      <datalist id="allchords"></datalist>
+      <div class="srcwrap">
+        <textarea id="src" spellcheck="false" autocomplete="off"></textarea>
+        <div class="suggest" id="suggest" role="listbox" aria-label="Chord suggestions" hidden></div>
+      </div>
       <p class="hint">
-        One per line. Built-in: just the name — <code>C</code>, <code>Em7</code>, <code>F#m</code>.<br>
+        One per line. Built-in: just the name — <code>C</code>, <code>Em7</code>, <code>F#m</code>. Type to autocomplete — <code>Tab</code> to complete, <code>↑</code>/<code>↓</code> to choose.<br>
         Or define inline (strings G C E A; <code>0</code>=open, <code>x</code>=muted):<br>
         <code>{define: Em6 frets 0 1 0 2 fingers 0 1 0 2}</code>
       </p>
@@ -94,6 +104,9 @@
       <div class="customlist" id="customlist"></div>
     </div>
 
+  </section>
+
+  <section class="canvas">
     <div class="panel controls">
       <div class="panel-title">Display</div>
       <div class="fields">
@@ -105,19 +118,18 @@
           <label for="perrow">Per row</label>
           <input id="perrow" type="number" min="1" max="20" value="10">
         </div>
-        <div class="field num">
-          <label for="imgw">Width</label>
-          <input id="imgw" type="number" min="80" max="200" value="110">
-        </div>
-        <div class="field num">
-          <label for="imgh">Height</label>
-          <input id="imgh" type="number" min="135" max="240" value="150">
+        <div class="dims">
+          <div class="field num">
+            <label for="imgw">Width</label>
+            <input id="imgw" type="number" min="80" max="200" value="110">
+          </div>
+          <div class="field num">
+            <label for="imgh">Height</label>
+            <input id="imgh" type="number" min="135" max="240" value="150">
+          </div>
         </div>
       </div>
     </div>
-  </section>
-
-  <section class="canvas">
     <div class="outbar">
       <span class="count" id="count"></span>
     </div>
@@ -251,8 +263,7 @@ const $=s=>document.querySelector(s);
 const src=$('#src');
 src.value=`C6\nCmaj7\nEm\nEm6\nEm7\nB9`;
 // autocomplete list (rebuilt whenever custom chords change)
-function refreshList(){ $('#allchords').innerHTML=Object.keys(LIB).map(n=>`<option value="${esc(n)}">`).join(''); }
-refreshList();
+function refreshList(){}   // suggestions are read live from LIB; no datalist to maintain
 
 let made=[];
 function build(){
@@ -308,7 +319,49 @@ function dl(url,fn){ const a=document.createElement('a'); a.href=url; a.download
 
 $('#render').onclick=build;
 $('#all').onclick=()=>{ src.value=Object.keys(LIB).join('\n'); build(); };
-src.addEventListener('input',()=>{clearTimeout(window.__t);window.__t=setTimeout(build,250);});
+/* ---------- chord autocomplete (custom dropdown on the textarea) ---------- */
+const suggestBox=$('#suggest');
+let sugItems=[], sugIndex=-1;
+function curLine(){ const v=src.value, c=src.selectionStart, s=v.lastIndexOf('\n',c-1)+1; let e=v.indexOf('\n',c); if(e<0)e=v.length; return {s,e,text:v.slice(s,e)}; }
+function placeSuggest(){
+  const cs=getComputedStyle(src), lh=parseFloat(cs.lineHeight)||22, pt=parseFloat(cs.paddingTop)||10;
+  const ln=src.value.slice(0,src.selectionStart).split('\n').length-1;
+  let top=pt+(ln+1)*lh-src.scrollTop+2;
+  top=Math.max(6,Math.min(top,src.clientHeight-6));
+  suggestBox.style.top=top+'px'; suggestBox.style.left='12px';
+}
+function closeSuggest(){ suggestBox.hidden=true; suggestBox.innerHTML=''; sugItems=[]; sugIndex=-1; }
+function setActive(i){ sugIndex=i; [...suggestBox.children].forEach((el,idx)=>el.classList.toggle('active',idx===i)); }
+function updateSuggest(){
+  const {text}=curLine(), q=text.trim().toLowerCase();
+  if(!q || text.trim().startsWith('{')){ closeSuggest(); return; }
+  const all=Object.keys(LIB);
+  const starts=all.filter(n=>n.toLowerCase().startsWith(q));
+  const has=all.filter(n=>!n.toLowerCase().startsWith(q)&&n.toLowerCase().includes(q));
+  sugItems=starts.concat(has).slice(0,8); sugIndex=-1;
+  if(!sugItems.length || (sugItems.length===1 && sugItems[0].toLowerCase()===q)){ closeSuggest(); return; }
+  suggestBox.innerHTML=sugItems.map(n=>`<div class="sug" role="option">${esc(n)}</div>`).join('');
+  [...suggestBox.children].forEach((el,i)=>{ el.onmousedown=ev=>{ ev.preventDefault(); accept(i); }; el.onmouseenter=()=>setActive(i); });
+  placeSuggest(); suggestBox.hidden=false;
+}
+function accept(i){
+  if(i<0||i>=sugItems.length){ closeSuggest(); return; }
+  const name=sugItems[i], {s,e}=curLine(), v=src.value;
+  src.value=v.slice(0,s)+name+v.slice(e);
+  src.selectionStart=src.selectionEnd=s+name.length;
+  closeSuggest(); src.focus(); build();
+}
+src.addEventListener('input',()=>{ updateSuggest(); clearTimeout(window.__t); window.__t=setTimeout(build,250); });
+src.addEventListener('keydown',e=>{
+  if(suggestBox.hidden) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); setActive((sugIndex+1)%sugItems.length); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); setActive((sugIndex-1+sugItems.length)%sugItems.length); }
+  else if(e.key==='Tab'){ e.preventDefault(); accept(sugIndex>=0?sugIndex:0); }
+  else if(e.key==='Enter'){ if(sugIndex>=0){ e.preventDefault(); accept(sugIndex); } }
+  else if(e.key==='Escape'){ e.preventDefault(); closeSuggest(); }
+});
+src.addEventListener('blur',()=>{ setTimeout(closeSuggest,150); });
+src.addEventListener('scroll',()=>{ if(!suggestBox.hidden) placeSuggest(); });
 $('#perrow').addEventListener('input',buildCombined);
 
 /* ---------- theme picker ---------- */
